@@ -1,6 +1,3 @@
-# Bright-TV-Viewership-Analysis
-Repository for Bright TV Viewership Analysis Project: covering data cleaning, exploration, visualisation, and insights. Tools: SQL, Databricks, BigQuery, Excel, PowerPoint, Google Looker Studio, Power BI, Canva, Miro, Figma, etc.
-
 # 📊 Bright TV Viewership Analysis Dashboard
 # 📌 Overview
 This project explores and visualises viewership behaviour for Bright TV using processed audience and channel consumption data. The goal is to identify who watches the platform, when they watch, and which channels drive the highest engagement across demographics and regions.
@@ -13,7 +10,7 @@ Identify top-performing channels and regional viewing patterns
 Explore demographic influence on engagement (age, gender, province)
 Build a full analytics pipeline from raw data → insights → dashboard
 
-# 🛠️ Tech Stack
+# 🛠️ Tools & Technologies
 SQL / Snowflake – Data cleaning, transformation & enrichment
 Python (optional) – Exploratory checks
 Google Looker Studio – Dashboard visualisation
@@ -90,7 +87,7 @@ Gender-specific channel preferences
 /notebooks
    └── SQL transformation scripts
 /dashboard
-   └── Bright TV Dashboard (Looker Studio link)
+   └── Bright TV Dashboard (Looker Studio link: https://lookerstudio.google.com/s/tkVSeRplA3E)
 /docs
    └── Presentation slides (Canva)
 README.md
