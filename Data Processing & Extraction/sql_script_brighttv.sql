@@ -1,420 +1,493 @@
--- Quick preview (returns first rows)
-SELECT *
-FROM Car_Sales
-LIMIT 10;
+--viewership
+SELECT * FROM ziller LIMIT 20;
+---user_profiles
+SELECT * FROM piller LIMIT 20;
 
 
--- 1) Basic counts
-SELECT COUNT(*) AS total_rows
-FROM Car_Sales;
 
-
--- 2) Detect exact duplicate rows
---    (Group by all columns present in the table)
-SELECT
-    YEAR, MAKE, MODEL, TRIM, BODY, TRANSMISSION, VIN, STATE,
-    CONDITION, ODOMETER, COLOR, INTERIOR, SELLER, MMR, SELLINGPRICE, SALEDATE,
-    COUNT(*) AS dup_count
-FROM Car_Sales
-GROUP BY
-    YEAR, MAKE, MODEL, TRIM, BODY, TRANSMISSION, VIN, STATE,
-    CONDITION, ODOMETER, COLOR, INTERIOR, SELLER, MMR, SELLINGPRICE, SALEDATE
-HAVING COUNT(*) > 1
-ORDER BY dup_count DESC;
-
-
--- 3) Missing / NULL checks (rows where any critical field is null)
-SELECT *
-FROM Car_Sales
-WHERE YEAR IS NULL
-   OR MAKE IS NULL
-   OR MODEL IS NULL
-   OR TRIM IS NULL
-   OR BODY IS NULL
-   OR TRANSMISSION IS NULL
-   OR VIN IS NULL
-   OR STATE IS NULL
-   OR CONDITION IS NULL
-   OR ODOMETER IS NULL
-   OR COLOR IS NULL
-   OR INTERIOR IS NULL
-   OR SELLER IS NULL
-   OR MMR IS NULL
-   OR SELLINGPRICE IS NULL
-   OR SALEDATE IS NULL
-LIMIT 200;
-
-
--- 4) Example of normalising missing body values using COALESCE (Snowflake uses COALESCE or NVL)
-SELECT BODY,
-       COALESCE(BODY, 'No_Data') AS BODY2
-FROM Car_Sales
-LIMIT 20;
-
-
--- 5) Robustly parse sale timestamps into a Snowflake TIMESTAMP_NTZ and DATE
---    Many of your sample values looked like: 'Tue Dec 16 2014 12:30:00'
---    We'll try a few formats; any non-parseable entries will return NULL.
-SELECT
-    SALEDATE AS raw_saledate,
-    TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS')        AS sale_ts_dy_mon,
-    TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH:MI:SS')          AS sale_ts_dy_mon_12h,
-    CAST(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS') AS DATE)  AS sale_date,
-    CAST(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH:MI:SS')    AS DATE)  AS sale_date_alt
-FROM Car_Sales
-LIMIT 50;
-
-
--- 6) Distinct make & model list (fixed trailing comma & ORDER syntax)
-SELECT DISTINCT MAKE, MODEL
-FROM Car_Sales
-ORDER BY MAKE, MODEL;
-
-
--- 7) Count of sales per make
-SELECT MAKE,
-       COUNT(*) AS total_cars
-FROM Car_Sales
-GROUP BY MAKE
-ORDER BY total_cars DESC;
-
-
--- 8) Average selling price per make (fixed table name typo 'Motors' -> 'Motor')
-SELECT MAKE,
-       ROUND(AVG(SELLINGPRICE), 2) AS AVG_PRICE
-FROM Car_Sales
-GROUP BY MAKE
-ORDER BY AVG_PRICE ASC;
-
-
--- 9) Monthly average selling price
---    Convert SALEDATE to a DATE first, then truncate to month.
-SELECT DATE_TRUNC('month',
-        CAST(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS') AS DATE)
-       ) AS sale_month,
-       ROUND(AVG(SELLINGPRICE), 2) AS avg_price
-FROM Car_Sales
-GROUP BY sale_month
-ORDER BY sale_month;
-
-
--- 10) Total cars sold per year (robust extraction)
-SELECT EXTRACT(YEAR FROM CAST(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS') AS DATE)) AS sale_year,
-FROM Car_Sales
-GROUP BY sale_year
-ORDER BY sale_year;
-
-
--- 11) Detailed timestamp breakdown: date, time, day name
-SELECT
-    TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS')                       AS sale_timestamp,
-    DAYNAME(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS'))              AS day_name,
-    CAST(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS') AS DATE)         AS sale_date,
-    TO_CHAR(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS')::TIME, 'HH24:MI:SS') AS sale_time
-FROM Car_Sales
-LIMIT 50;
-
-
--- 12) Compare selling price with MMR by make/model
-SELECT MAKE,
-       MODEL,
-       ROUND(AVG(SELLINGPRICE), 2) AS AVG_SELLINGPRICE,
-       ROUND(AVG(MMR), 2)          AS AVG_MMR,
-       ROUND(AVG(SELLINGPRICE - MMR), 2) AS AVG_DIFFERENCE
-FROM Car_Sales
-GROUP BY MAKE, MODEL
-ORDER BY AVG_DIFFERENCE ASC;
-
-
--- 13) Cars sold above MMR
-SELECT *
-FROM Car_Sales
-WHERE SELLINGPRICE > MMR
-LIMIT 200;
-
-
--- 14) Average selling Price by CONDITION
-SELECT CONDITION,
-       ROUND(AVG(SELLINGPRICE), 2) AS AVG_PRICE
-FROM Car_Sales
-GROUP BY CONDITION
-ORDER BY CONDITION ASC;
-
-
--- 15) Relationship between mileage and price (use CASE then group)
-SELECT
-  CASE
-    WHEN TRY_TO_NUMBER(ODOMETER) < 20000 THEN 'Low Mileage'
-    WHEN TRY_TO_NUMBER(ODOMETER) BETWEEN 20000 AND 60000 THEN 'Medium Mileage'
-    WHEN TRY_TO_NUMBER(ODOMETER) IS NULL THEN 'Unknown Mileage'
-    ELSE 'High Mileage'
-  END AS mileage_category,
-  ROUND(AVG(SELLINGPRICE), 2) AS avg_price
-FROM Car_Sales
-GROUP BY mileage_category
-ORDER BY avg_price ASC;
-
-
--- 16) Average price per state
-SELECT STATE,
-       ROUND(AVG(SELLINGPRICE), 2) AS avg_price
-FROM Car_Sales
-GROUP BY STATE
-ORDER BY avg_price ASC;
-
-
--- 17) Top 10 states (by total sales) -- fixed ORDER direction and limit
-SELECT STATE,
-       COUNT(*) AS total_sales
-FROM Car_Sales
-GROUP BY STATE
-ORDER BY total_sales DESC
-LIMIT 10;
-
-
--- 18) Most sold color (top colors)
-SELECT COLOR,
-       COUNT(*) AS total
-FROM Car_Sales
-GROUP BY COLOR
-ORDER BY total DESC
-LIMIT 20;
-
-
--- 19) Transmission counts & avg price
-SELECT TRANSMISSION,
-       COUNT(*) AS total_sales,
-       ROUND(AVG(SELLINGPRICE), 2) AS avg_price
-FROM Car_Sales
-GROUP BY TRANSMISSION
-ORDER BY total_sales DESC;
-
-
--- 20) Seller with highest average selling price (only sellers with >10 sales)
-SELECT SELLER,
-       COUNT(*) AS total_sales,
-       ROUND(AVG(SELLINGPRICE), 2) AS avg_price
-FROM Car_Sales
-GROUP BY SELLER
-HAVING COUNT(*) > 10
-ORDER BY avg_price DESC;
-
-
--- =========================================================
--- 21) CREATE A CLEAN TABLE (canonical typed columns)
---    This is the proper "clean" layer to downstream.
--- =========================================================
-
-SELECT
-    -- Parse and cast date safely
-    CAST(TRY_TO_TIMESTAMP_NTZ(SALEDATE, 'DY MON DD YYYY HH24:MI:SS') AS DATE)          AS SALE_DATE,
-
-    -- Numeric columns using TRY_TO_NUMBER to avoid failure on bad strings
-    TRY_TO_NUMBER(SELLINGPRICE)                                                       AS SALES,
-    TRY_TO_NUMBER(MMR)                                                                AS COST_OF_SALES,
-
-    -- One car per row
-    1                                                                                 AS QUANTITY_SOLD,
-
-    -- Keep canonical descriptive columns (trim strings)
-    TRY_TO_NUMBER(YEAR)                                                              AS YEAR_NUM,
-    TRIM(MAKE)                                                                       AS MAKE,
-    TRIM(MODEL)                                                                      AS MODEL,
-    TRIM(TRIM)                                                                       AS MODEL_TRIM,
-    TRIM(BODY)                                                                        AS BODY,
-    TRIM(TRANSMISSION)                                                                AS TRANSMISSION,
-    TRIM(VIN)                                                                         AS VIN,
-    TRIM(STATE)                                                                       AS STATE,
-    TRY_TO_NUMBER(CONDITION)                                                          AS CONDITION_SCORE,
-    TRY_TO_NUMBER(ODOMETER)                                                           AS ODOMETER,
-    TRIM(COLOR)                                                                       AS COLOR,
-    TRIM(INTERIOR)                                                                    AS INTERIOR,
-    TRIM(SELLER)                                                                      AS SELLER
-FROM Car_Sales;
-
-
--- Quick sanity preview
-SELECT *
-FROM Car_Sales
-LIMIT 20;
-
-
--- =========================================================
--- 22) CREATE PROCESSED TABLE (derived metrics)
--- =========================================================
-
--- =========================================================
-
-SELECT
-    -- parse/alias the date column from the raw table (handles formats like "Tue Dec 16 2014 12:30:00")
-    CAST(
-      TRY_TO_TIMESTAMP_NTZ(saledate, 'DY MON DD YYYY HH24:MI:SS')
-      AS DATE
-    ) AS SALE_DATE,
-
-    -- numeric conversions (use TRY_TO_NUMBER so bad strings become NULL instead of breaking the query)
-    TRY_TO_NUMBER(sellingprice) AS SALES,
-    TRY_TO_NUMBER(mmr)         AS COST_OF_SALES,
-
-    -- one row per car
-    1                          AS QUANTITY_SOLD,
-
-    -- keep other descriptive columns (trim strings and cast where appropriate)
-    TRY_TO_NUMBER("YEAR")      AS YEAR_NUM,
-    TRIM(MAKE)                 AS MAKE,
-    TRIM(MODEL)                AS MODEL,
-    TRIM(TRIM)                 AS MODEL_TRIM,
-    TRIM(BODY)                 AS BODY,
-    TRIM(TRANSMISSION)         AS TRANSMISSION,
-    TRIM(VIN)                  AS VIN,
-    TRIM(STATE)                AS STATE,
-    TRY_TO_NUMBER(CONDITION)   AS CONDITION_SCORE,
-    TRY_TO_NUMBER(ODOMETER)    AS ODOMETER,
-    TRIM(COLOR)                AS COLOR,
-    TRIM(INTERIOR)             AS INTERIOR,
-    TRIM(SELLER)               AS SELLER
-
-FROM CAR_SALES;  
-
-
-
--- Preview processed
-SELECT *
-FROM Car_Sales
-LIMIT 20;
-
-----cleaned up colmns
-SELECT
-    -- base / cleaned columns
-    CAST(TRY_TO_TIMESTAMP_NTZ(saledate, 'DY MON DD YYYY HH24:MI:SS') AS DATE) AS SALE_DATE,
-    TRY_TO_NUMBER(sellingprice) AS SALES,
-    TRY_TO_NUMBER(mmr)         AS COST_OF_SALES,
-    1                          AS QUANTITY_SOLD,
-    TRY_TO_NUMBER("YEAR")      AS YEAR_NUM,
-    TRIM(MAKE)                 AS MAKE,
-    TRIM(MODEL)                AS MODEL,
-    TRIM(TRIM)                 AS MODEL_TRIM,
-    TRIM(BODY)                 AS BODY,
-    TRIM(TRANSMISSION)         AS TRANSMISSION,
-    TRIM(VIN)                  AS VIN,
-    TRIM(STATE)                AS STATE,
-    TRY_TO_NUMBER(CONDITION)   AS CONDITION_SCORE,
-    TRY_TO_NUMBER(ODOMETER)    AS ODOMETER,
-    TRIM(COLOR)                AS COLOR,
-    TRIM(INTERIOR)             AS INTERIOR,
-    TRIM(SELLER)               AS SELLER,
-
-    -- derived metrics
-    (COALESCE(TRY_TO_NUMBER(sellingprice),0) * 1) AS TOTAL_REVENUE,
-
-    CASE WHEN 1 = 0 THEN NULL
-         ELSE ROUND(TRY_TO_NUMBER(sellingprice) / 1, 2)
-    END AS PRICE_PER_UNIT,
-
-    (TRY_TO_NUMBER(sellingprice) - TRY_TO_NUMBER(mmr)) AS GROSS_PROFIT,
-
-    CASE WHEN TRY_TO_NUMBER(sellingprice) IS NULL OR TRY_TO_NUMBER(sellingprice) = 0 THEN NULL
-         ELSE ROUND(((TRY_TO_NUMBER(sellingprice) - TRY_TO_NUMBER(mmr)) / TRY_TO_NUMBER(sellingprice)) * 100, 2)
-    END AS PROFIT_MARGIN_PERCENT,
-
-    CASE
-      WHEN TRY_TO_NUMBER(sellingprice) IS NULL OR TRY_TO_NUMBER(mmr) IS NULL THEN 'UNKNOWN'
-      WHEN ((TRY_TO_NUMBER(sellingprice) - TRY_TO_NUMBER(mmr)) / NULLIF(TRY_TO_NUMBER(sellingprice),0)) * 100 >= 40 THEN 'HIGH MARGIN'
-      WHEN ((TRY_TO_NUMBER(sellingprice) - TRY_TO_NUMBER(mmr)) / NULLIF(TRY_TO_NUMBER(sellingprice),0)) * 100 BETWEEN 20 AND 39.99 THEN 'MEDIUM MARGIN'
-      ELSE 'LOW MARGIN'
-    END AS MARGIN_CATEGORY,
-
-    DATE_TRUNC('month', CAST(TRY_TO_TIMESTAMP_NTZ(saledate, 'DY MON DD YYYY HH24:MI:SS') AS DATE))   AS SALE_MONTH,
-    DATE_TRUNC('quarter', CAST(TRY_TO_TIMESTAMP_NTZ(saledate, 'DY MON DD YYYY HH24:MI:SS') AS DATE)) AS SALE_QUARTER,
-    DATE_TRUNC('year', CAST(TRY_TO_TIMESTAMP_NTZ(saledate, 'DY MON DD YYYY HH24:MI:SS') AS DATE))    AS SALE_YEAR
-
-FROM CAR_SALES;
-
-
-
-
--- =========================================================
--- 23) SUMMARY AGGREGATES (examples)
--- =========================================================
--- Total Revenue
-SELECT ROUND(SUM(sellingprice),2) AS TOTAL_REVENUE
-FROM CAR_SALES;
-
-
---- margin ranking
+--- daily
 SELECT 
-    *,
-    CASE
-        WHEN ((sellingprice - mmr) / NULLIF(sellingprice, 0)) * 100 >= 40 THEN 'HIGH MARGIN'
-        WHEN ((sellingprice - mmr) / NULLIF(sellingprice, 0)) * 100 BETWEEN 20 AND 39.99 THEN 'MEDIUM MARGIN'
-        ELSE 'LOW MARGIN'
-    END AS MARGIN_CATEGORY
-FROM CAR_SALES;
+    DATE_TRUNC(
+        'day', 
+        DATEADD(hour, 2, TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI'))
+    ) AS day_sast,
+    COUNT(*) AS sessions,
+    SUM(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS total_minutes,
+    COUNT(DISTINCT USERID) AS unique_users
+FROM ziller
+GROUP BY 1
+ORDER BY 1;
 
--- 
+--monthly usage
 SELECT
-   CASE
-        WHEN ((sellingprice - mmr) / NULLIF(sellingprice,0)) * 100 >= 40 THEN 'HIGH MARGIN'
-        WHEN ((sellingprice - mmr) / NULLIF(sellingprice,0)) * 100 BETWEEN 20 AND 39.99 THEN 'MEDIUM MARGIN'
-        ELSE 'LOW MARGIN'
-   END AS MARGIN_CATEGORY,
-   COUNT(*)
-FROM CAR_SALES
-GROUP BY 1;
+    DATE_TRUNC(
+        'month', 
+        DATEADD(hour, 2, TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI'))
+    ) AS month_sast,
+    COUNT(*) AS sessions,
+    SUM(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS total_minutes
+FROM ziller
+GROUP BY 1
+ORDER BY 1;
 
-
-
---- revenue by month
+--hourly
 SELECT
-    DATE_TRUNC('month', TRY_TO_TIMESTAMP_NTZ(saledate, 'DY MON DD YYYY HH24:MI:SS')) AS sale_month,
-    ROUND(SUM(sellingprice), 2) AS monthly_revenue
-FROM CAR_SALES
-GROUP BY sale_month
-ORDER BY sale_month;
+    DATE_PART('hour', DATEADD(hour, 2, TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI'))) AS hour_of_day,
+    COUNT(*) AS sessions,
+    SUM(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS total_minutes,
+    AVG(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS avg_session_minutes
+FROM ziller
+GROUP BY 1
+ORDER BY 1;
 
--- =========================================================
--- 24) FINAL EXPORT TABLE (ready for CSV export)
--- =========================================================
+--weekly
+SELECT
+    TO_CHAR(DATEADD(hour, 2, TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')), 'DY') AS weekday,
+    DATE_PART('dow', DATEADD(hour, 2, TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI'))) AS dow,
+    COUNT(*) AS sessions,
+    SUM(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS total_minutes
+FROM ziller
+GROUP BY 1,2
+ORDER BY dow;
 
+---Content Consumption by Channel
+SELECT
+    CHANNEL2,
+    COUNT(*) AS sessions,
+    SUM(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS total_minutes,
+    AVG(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS avg_duration
+FROM ziller
+GROUP BY 1
+ORDER BY total_minutes DESC;
+
+--Top Content by Total Watch Time
+SELECT
+    CHANNEL2 AS content_title,
+    COUNT(*) AS sessions,
+    SUM(
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+    ) AS total_minutes
+FROM ziller
+GROUP BY 1
+ORDER BY total_minutes DESC
+LIMIT 20;
+
+----checking columns
+DESC TABLE piller;
+
+------  Demographic Influence on Consumption
+SELECT
+    u.GENDER,
+    u.AGE,
+    u.PROVINCE,
+    COUNT(v.USERID) AS sessions,
+    SUM(
+        TO_NUMBER(SPLIT_PART(v.DURATION2, ':', 1)) * 60 +
+        TO_NUMBER(SPLIT_PART(v.DURATION2, ':', 2)) +
+        TO_NUMBER(SPLIT_PART(v.DURATION2, ':', 3)) / 60
+    ) AS total_minutes
+FROM ziller v
+LEFT JOIN piller u
+    ON v.USERID = u.USERID
+GROUP BY 1,2,3
+ORDER BY total_minutes DESC;
+
+
+
+-- Low Consumption Days (Bottom 10%)
+
+WITH daily AS (
+    SELECT 
+        DATE_TRUNC('day', DATEADD(hour, 2, TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI'))) AS day_sast,
+        SUM(
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+        ) AS total_minutes
+    FROM ziller
+    GROUP BY 1
+)
 SELECT *
-FROM CAR_SALES;
+FROM daily
+WHERE total_minutes <= (
+    SELECT APPROX_PERCENTILE(total_minutes, 0.10) FROM daily
+)
+ORDER BY day_sast;
 
 
--- Quick check
+---Popular Channels on Low-Consumption Days
+--DESC TABLE ziller;
+
+---convert date and show all columns
+SELECT
+    USERID,
+    CHANNEL2,
+    TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI') AS RECORDDATE2_TS,
+    DURATION2
+FROM ziller;
+
+-----Group by YEAR
+
+SELECT
+    YEAR(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS YEAR,
+    COUNT(*) AS TOTAL_RECORDS
+FROM ziller
+GROUP BY 1
+ORDER BY 1;
+
+---Group by MONTH
+SELECT
+    TO_CHAR(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'YYYY-MM') AS YEAR_MONTH,
+    COUNT(*) AS TOTAL_RECORDS
+FROM ziller
+GROUP BY 1
+ORDER BY 1;
+
+---specific date range
 SELECT *
-from CAR_SALES
-LIMIT 50;
+FROM ziller
+WHERE TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')
+      BETWEEN '2016-01-01' AND '2016-12-31';
+
+---Count by CHANNEL2
+
+SELECT
+    CHANNEL2,
+    COUNT(*) AS TOTAL
+FROM ziller
+GROUP BY CHANNEL2
+ORDER BY TOTAL DESC;
 
 
--- =========================================================
--- 25) final processed data
---   
--- =========================================================
+----------------- Power Users (Top 5%)
 
+WITH totals AS (
+    SELECT USERID, 
+        SUM(
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+        ) AS total_minutes
+    FROM ziller
+    GROUP BY 1
+)
+SELECT *
+FROM totals
+WHERE total_minutes >= (
+    SELECT APPROX_PERCENTILE(total_minutes, 0.95)
+    FROM totals
+)
+ORDER BY total_minutes DESC;
+
+-------Light Users (Bottom 30%)
+
+WITH totals AS (
+    SELECT USERID, 
+        SUM(
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 1)) * 60 +
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 2)) +
+            TO_NUMBER(SPLIT_PART(DURATION2, ':', 3)) / 60
+        ) AS total_minutes
+    FROM ziller
+    GROUP BY 1
+)
+SELECT USERID
+FROM totals
+WHERE total_minutes <= (
+    SELECT APPROX_PERCENTILE(total_minutes, 0.30)
+    FROM totals
+);
+
+--------
+WITH last_seen AS (
+    SELECT 
+        USERID, 
+        MAX(DATEADD(
+            hour, 
+            2, 
+            TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')
+        )) AS last_activity
+    FROM ziller
+    GROUP BY USERID
+)
+SELECT
+    u.USERID,
+    u.GENDER,
+    u.AGE,
+    u.PROVINCE AS REGION,   -- closest match (you don't have REGION)
+    NULL AS SUBSCRIPTION_TYPE,  -- this column does NOT exist
+    ls.last_activity
+FROM piller u
+LEFT JOIN last_seen ls 
+    ON u.USERID = ls.USERID
+WHERE ls.last_activity IS NULL
+   OR ls.last_activity < DATEADD(day, -90, CURRENT_TIMESTAMP());
+
+----------
+-------------------------------------------------------------------
+--------THE FULLY-CORRECTED SCRIPT
 
 SELECT 
-    MAX(TRY_TO_TIMESTAMP(saledate, 'DY MON DD YYYY HH:MI:SS')) AS New_SaleDate,
-    YEAR(MAX(TRY_TO_TIMESTAMP(saledate, 'DY MON DD YYYY HH:MI:SS'))) AS New_Year,
-    MONTHNAME(MAX(TRY_TO_TIMESTAMP(saledate, 'DY MON DD YYYY HH:MI:SS'))) AS Month,
-    MAKE,
-    MODEL,
-    MAX(sellingprice) AS max_selling_price,
-    MIN(sellingprice) AS min_selling_price,
-    AVG(sellingprice) AS avg_selling_price,
-    AVG(odometer) AS avg_mileage,
-    MAX(odometer) AS max_mileage,
-    MIN(odometer) AS min_mileage,
-    COUNT(*) AS total_sales,
-    SUM(COALESCE(sellingprice,0)) AS total_revenue,
+    MIN(Age) AS MIN_AGE,
+    MAX(Age) AS MAX_AGE
+FROM piller;
+-------
+SELECT 
+    MIN(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS MIN_TIMESTAMP,
+    MAX(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS MAX_TIMESTAMP
+FROM ziller;
+
+------
+SELECT COUNT(*) AS TOTAL_USERS FROM piller;
+
+SELECT COUNT(DISTINCT USERID) AS UNIQUE_USERS FROM piller;
+
+SELECT COUNT(*) AS TOTAL_VIEWERSHIP_RECORDS FROM ziller;
+
+SELECT COUNT(USERID) AS NON_NULL_USERID_COUNT FROM ziller;
+
+
+-----dupes for user profiles
+SELECT 
+    USERID,
+    COUNT(*) AS DUP_COUNT
+FROM piller
+GROUP BY USERID
+HAVING COUNT(*) > 1;
+
+--- dupes for viewership
+SELECT 
+    USERID,
+    CHANNEL2,
+    RECORDDATE2,
+    COUNT(*) AS DUP_COUNT
+FROM ziller
+GROUP BY USERID, CHANNEL2, RECORDDATE2
+HAVING COUNT(*) > 1;
+
+---veiwership table withno dupes
+
+SELECT DISTINCT *
+FROM ziller;
+
+---missing value checks
+SELECT * 
+FROM piller
+WHERE USERID IS NULL 
+   OR NAME IS NULL 
+   OR SURNAME IS NULL 
+   OR EMAIL IS NULL 
+   OR GENDER IS NULL 
+   OR RACE IS NULL 
+   OR AGE IS NULL 
+   OR PROVINCE IS NULL 
+   OR SOCIAL_MEDIA_HANDLE IS NULL;
+
+-- -----zerooooooooooo
+-- SELECT * 
+-- FROM ziller
+-- WHERE USERID IS NULL 
+--    OR CHANNEL2 IS NULL 
+--    OR RECORDDATE2 IS NULL 
+--    OR DURATION2 IS NULL;
+
+
+
+
+
+    ---
+    -- ==========================================================
+-- CLEAN USER PROFILES
+-- ==========================================================
+
+SELECT 
+    USERID,
+    NAME,
+    SURNAME,
+    EMAIL,
+    GENDER,
+    RACE,
+    AGE,
+    PROVINCE,
+    SOCIAL_MEDIA_HANDLE,
+
     CASE
-        WHEN MAX(sellingprice) < 100000 THEN 'BUDGET'
-        WHEN MAX(sellingprice) BETWEEN 100000 AND 220000 THEN 'MID_RANGE'
-        ELSE 'EXPENSIVE'
-    END AS price_bucket,
-    CASE 
-        WHEN MAX(odometer) < 20000 THEN 'Low Mileage'
-        WHEN MAX(odometer) BETWEEN 20000 AND 60000 THEN 'Medium Mileage'
-        ELSE 'High Mileage'
-    END AS mileage_category
-FROM CAR_SALES
-GROUP BY MAKE, MODEL;
+        WHEN AGE BETWEEN 1 AND 12 THEN 'Younger than 13'
+        WHEN AGE BETWEEN 13 AND 25 THEN '13 to 25'
+        WHEN AGE BETWEEN 26 AND 44 THEN '26 to 44'
+        WHEN AGE >= 45 THEN '45 and older'
+        ELSE 'Not Specified'
+    END AS AGE_GROUP
+FROM piller;
+
+-- ==========================================================
+-- CLEAN & ENRICH VIEWERSHIP TABLE
+-- ==========================================================
+
+SELECT
+    USERID,
+    CHANNEL2,
+    RECORDDATE2,
+    DURATION2,
+
+    -- Convert RECORDDATE2 string to timestamp
+    TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI') AS START_TS,
+
+    -- Extract time portion
+    TO_CHAR(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') AS TIME,
+
+    -- Extract day of week
+    DAYNAME(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS DAY,
+
+    -- Extract month
+    MONTHNAME(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS MONTH,
+
+    -- Extract year
+    YEAR(TO_TIMESTAMP(RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS YEAR,
+
+    -- Convert DURATION2 to minutes
+    EXTRACT(HOUR FROM DURATION2) * 60
+    + EXTRACT(MINUTE FROM DURATION2)
+    + EXTRACT(SECOND FROM DURATION2)/60 AS DURATION_MINUTES
+
+FROM ziller;
+
+
+-- ==========================================================
+--  CREATE FINAL ANALYTICS TABLE (JOIN USER + VIEWERSHIP)
+-- ==========================================================
+
+
+
+SELECT
+    u.USERID,
+    u.NAME,
+    u.SURNAME,
+    u.GENDER,
+    u.RACE,
+    u.PROVINCE,
+
+    -- Compute AGE_GROUP dynamically
+    CASE
+        WHEN u.AGE BETWEEN 1 AND 12 THEN 'Younger than 13'
+        WHEN u.AGE BETWEEN 13 AND 25 THEN '13 to 25'
+        WHEN u.AGE BETWEEN 26 AND 44 THEN '26 to 44'
+        WHEN u.AGE >= 45 THEN '45 and older'
+        ELSE 'Not Specified'
+    END AS AGE_GROUP,
+
+    v.CHANNEL2,
+    v.DURATION2,
+
+    -- Convert DURATION2 (TIME) to minutes
+    EXTRACT(HOUR FROM v.DURATION2) * 60
+    + EXTRACT(MINUTE FROM v.DURATION2)
+    + EXTRACT(SECOND FROM v.DURATION2)/60 AS DURATION_MINUTES,
+
+    -- Extract timestamp components from RECORDDATE2
+    TO_CHAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') AS TIME,
+    DAYNAME(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS DAY,
+    MONTHNAME(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS MONTH,
+    YEAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI')) AS YEAR,
+
+    -- Watch duration buckets
+    CASE
+        WHEN (EXTRACT(HOUR FROM v.DURATION2) * 60
+              + EXTRACT(MINUTE FROM v.DURATION2)
+              + EXTRACT(SECOND FROM v.DURATION2)/60) < 180 THEN '0 - 3 Hrs'
+        WHEN (EXTRACT(HOUR FROM v.DURATION2) * 60
+              + EXTRACT(MINUTE FROM v.DURATION2)
+              + EXTRACT(SECOND FROM v.DURATION2)/60) < 360 THEN '3 - 6 Hrs'
+        WHEN (EXTRACT(HOUR FROM v.DURATION2) * 60
+              + EXTRACT(MINUTE FROM v.DURATION2)
+              + EXTRACT(SECOND FROM v.DURATION2)/60) < 540 THEN '6 - 9 Hrs'
+        ELSE '9 - 12 Hrs'
+    END AS WATCH_DURATION,
+
+    -- Time of day
+    CASE
+        WHEN TO_CHAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') 
+             BETWEEN '06:00:00' AND '11:59:59' THEN 'Morning'
+        WHEN TO_CHAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') 
+             BETWEEN '12:00:00' AND '17:59:59' THEN 'Afternoon'
+        WHEN TO_CHAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') 
+             BETWEEN '18:00:00' AND '23:59:59' THEN 'Evening'
+        ELSE 'Night'
+    END AS TIME_TYPE
+
+FROM piller u
+JOIN ziller v
+    ON u.USERID = v.USERID;
+
+-- ==========================================================
+--  OPTIONAL: SAMPLE ANALYTICS QUERIES
+-- ==========================================================
+
+-- Users per channel
+SELECT CHANNEL2 AS CHANNEL, COUNT(DISTINCT USERID) AS USER_COUNT
+FROM ziller
+GROUP BY 1
+ORDER BY USER_COUNT DESC;
+
+-- Users per age group
+SELECT 
+    CASE
+        WHEN u.AGE BETWEEN 1 AND 12 THEN 'Younger than 13'
+        WHEN u.AGE BETWEEN 13 AND 25 THEN '13 to 25'
+        WHEN u.AGE BETWEEN 26 AND 44 THEN '26 to 44'
+        WHEN u.AGE >= 45 THEN '45 and older'
+        ELSE 'Not Specified'
+    END AS AGE_GROUP,
+    COUNT(DISTINCT v.USERID) AS USER_COUNT
+FROM piller u
+JOIN ziller v ON u.USERID = v.USERID
+GROUP BY 1
+ORDER BY USER_COUNT DESC;
+
+
+-- Users per time of day
+SELECT
+    CASE
+        WHEN TO_CHAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') 
+             BETWEEN '06:00:00' AND '11:59:59' THEN 'Morning'
+        WHEN TO_CHAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') 
+             BETWEEN '12:00:00' AND '17:59:59' THEN 'Afternoon'
+        WHEN TO_CHAR(TO_TIMESTAMP(v.RECORDDATE2, 'YYYY/MM/DD HH24:MI'), 'HH24:MI:SS') 
+             BETWEEN '18:00:00' AND '23:59:59' THEN 'Evening'
+        ELSE 'Night'
+    END AS TIME_TYPE,
+    COUNT(DISTINCT v.USERID) AS USER_COUNT
+FROM ziller v
+JOIN piller u ON u.USERID = v.USERID
+GROUP BY 1
+ORDER BY USER_COUNT DESC;
